@@ -10,68 +10,78 @@ scripts/hooks    # lint + type checks
 
 ## 1. Foundation
 
-- [ ] `scripts/test` exists, is executable, and runs the suite.
-- [ ] `scripts/hooks` exists, is executable, and runs lint + type checks.
-- [ ] Both scripts match what `README.md` documents.
-- [ ] Dependencies are pinned/reproducible.
-- [ ] Settings loader reads `TELEGRAM_BOT_TOKEN` and `GEMINI_API_KEY` from
+- [x] `scripts/test` exists, is executable, and runs the suite.
+- [x] `scripts/hooks` exists, is executable, and runs lint + type checks.
+- [x] Both scripts match what `README.md` documents.
+- [x] Dependencies are pinned/reproducible.
+- [x] Settings loader reads `TELEGRAM_BOT_TOKEN` and `GEMINI_API_KEY` from
       `.env` and fails loudly when absent.
-- [ ] No secret value appears anywhere in tracked files
+- [x] No secret value appears anywhere in tracked files
       (`git grep` for both key values returns nothing).
 
 ## 2. Contracts
 
-- [ ] `PhotoMessage` rejects empty bytes, non-image mime, and oversized
+- [x] `PhotoMessage` rejects empty bytes, non-image mime, and oversized
       payloads at the edge — before any Gemini call.
-- [ ] `HumanPresenceVerdict` is a strict typed parse; malformed Gemini
+- [x] `HumanPresenceVerdict` is a strict typed parse; malformed Gemini
       output does not become a raw dict downstream.
-- [ ] No raw `dict` or `Any` crosses a module boundary.
-- [ ] Phase is a typed enum; state carries a schema version.
+- [x] No raw `dict` or `Any` crosses a module boundary.
+- [x] Phase is a typed enum; state carries a schema version.
+
+> Note: the wire schema sent to Gemini strips `additionalProperties`
+> (pydantic emits it for `extra="forbid"`; the API rejects it).
 
 ## 3. Bouncer behaviour — the two required tests
 
-- [ ] **Negative test (object/landscape):** verdict
+- [x] **Negative test (object/landscape):** verdict
       `human_present=False` → cheeky rejection sent, session state reset to
       the initial phase, Gemini mocked (no network).
-- [ ] **Positive test (person):** verdict `human_present=True` →
+- [x] **Positive test (person):** verdict `human_present=True` →
       confirmation sent, state advanced to `AWAITING_INTERVIEW`, Gemini
       mocked (no network).
-- [ ] Both tests pass under `scripts/test`.
+- [x] Both tests pass under `scripts/test`.
 
 ## 4. Failure handling (conversation path)
 
-- [ ] Gemini returns unparseable output → error logged, graceful reply,
+- [x] Gemini returns unparseable output → error logged, graceful reply,
       never raised to the user.
-- [ ] Gemini call fails/times out → logged loudly, polling loop survives.
-- [ ] No bare `except: pass`; every suppressed exception is logged.
-- [ ] Logging is applied via decorators, not sprinkled through business
+- [x] Gemini call fails/times out → logged loudly, polling loop survives.
+- [x] No bare `except: pass`; every suppressed exception is logged.
+- [x] Logging is applied via decorators, not sprinkled through business
       logic.
 
 ## 5. State & isolation
 
-- [ ] Rejection resets only the offending `chat_id`'s state.
-- [ ] Two `chat_id`s never share or observe each other's state.
-- [ ] Pass advances exactly one session to `AWAITING_INTERVIEW`.
+- [x] Rejection resets only the offending `chat_id`'s state.
+- [x] Two `chat_id`s never share or observe each other's state.
+- [x] Pass advances exactly one session to `AWAITING_INTERVIEW`.
 
 ## 6. Wiring
 
-- [ ] ADK layout contains the Bouncer as the first pipeline stage.
-- [ ] Long-polling entry point routes a photo update through download →
+- [x] ADK layout contains the Bouncer as the first pipeline stage.
+- [x] Long-polling entry point routes a photo update through download →
       validate → Bouncer → reply.
-- [ ] Webhook is not used; no public URL required.
+- [x] Webhook is not used; no public URL required.
+
+> Note: validation now happens at the gateway immediately after download
+> (`sniff_image_mime` + `PhotoMessage`), with the agent's re-validation kept
+> as defense in depth.
 
 ## 7. Optional live check (skipped by default)
 
-- [ ] Integration test tagged and auto-skipped without `GEMINI_API_KEY`.
-- [ ] With a key: real Gemini rejects a landscape/object image and accepts a
-      person image.
+- [x] Integration test tagged and auto-skipped without `GEMINI_API_KEY`
+      (also deselected by default via `addopts = "-m 'not live'"` — opt in
+      with `pytest -m live`).
+- [x] With a key: real Gemini rejects a landscape/object image and accepts a
+      person image. Run with `python3 -m pytest tests/integration -m live -q`
+      — both pass against the real API.
 
 ## 8. Docs & constitution alignment
 
-- [ ] `README.md` documents setup, required keys, run command, dev scripts.
-- [ ] Implementation matches `SPECS/TECH.md`; any divergence surfaced to the
+- [x] `README.md` documents setup, required keys, run command, dev scripts.
+- [x] Implementation matches `SPECS/TECH.md`; any divergence surfaced to the
       user and the spec updated with approval.
-- [ ] `SPECS/ROADMAP.md` Phase 1/2 marked `done` **only** if verified here.
+- [x] `SPECS/ROADMAP.md` Phase 1/2 marked `done` **only** if verified here.
 
 ## Merge gate
 

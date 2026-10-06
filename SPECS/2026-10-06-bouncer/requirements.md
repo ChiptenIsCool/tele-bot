@@ -80,6 +80,11 @@ scope** and arrive in later phases.
 
 ## Contracts
 
+> **Implemented as specified** — see `validation.md` for the verified
+> checklist. One naming divergence from the table below: the Telegram→Bouncer
+> contract field is `data` in code (`bytes` is a Python builtin); same type,
+> same rules.
+
 ### `HumanPresenceVerdict` (Gemini → Bouncer)
 
 Typed parse of the model's structured response.
@@ -100,7 +105,7 @@ generic message, never a crash).
 | --- | --- | --- |
 | `chat_id` | `int` | required; the session key |
 | `file_id` | `str` | required, non-empty |
-| `bytes` | `bytes` | required, non-empty, ≤ size ceiling |
+| `data` | `bytes` | required, non-empty, ≤ size ceiling (named `data` in code — see note above) |
 | `mime_type` | `str` | must be an image type |
 
 Violations are rejected at the edge before Gemini is called.
