@@ -5,7 +5,7 @@ complete only when its acceptance criteria are verified.
 
 Status legend: `todo` · `in progress` · `done`
 
-## Phase 1 — Repository & gateway — `todo`
+## Phase 1 — Repository & gateway — `done`
 
 Project skeleton, `.env` loading, Telegram long-polling loop.
 
@@ -16,7 +16,18 @@ Project skeleton, `.env` loading, Telegram long-polling loop.
 
 **Serves:** happy-path entry point; repo hygiene.
 
-## Phase 2 — Bouncer — `todo`
+**Delivered with SPECS/2026-10-06-bouncer/ (verified 2026-10-06):**
+- Pinned manifest (`requirements.txt`), pytest/ruff/mypy config in
+  `pyproject.toml`, and the ground-truth dev scripts `scripts/test`
+  (`pytest`) + `scripts/hooks` (`ruff check`, `ruff format --check`, `mypy`).
+- Typed settings loader (`tele_bot/settings.py`) reading
+  `TELEGRAM_BOT_TOKEN` + `GEMINI_API_KEY` from `.env`, failing loudly on
+  missing or blank secrets; `.env` gitignored, `.env.example` shipped.
+- Long-polling entry point `tele_bot/main.py` (`python3 -m tele_bot.main`).
+  Note: the final criterion ("hardcoded test reply") was superseded by
+  Phase 2's real Bouncer handling photo updates; there is no hardcoded reply.
+
+## Phase 2 — Bouncer — `done`
 
 Gemini 3.1 Flash Lite vision gate.
 
@@ -26,6 +37,20 @@ Gemini 3.1 Flash Lite vision gate.
 - Result parsed into a typed Pydantic model at the boundary.
 
 **Serves:** happy path; graceful wrong-input handling.
+
+**Delivered with SPECS/2026-10-06-bouncer/ (verified 2026-10-06):**
+- `tele_bot/bouncer.py` gate + `tele_bot/gemini_classifier.py` (Gemini 3.1
+  Flash Lite, strict JSON verdict schema, 30s bounded timeout, off the event
+  loop via `asyncio.to_thread`).
+- Validation at the edge: `PhotoMessage` (image-only, size ceiling) and
+  `HumanPresenceVerdict` (strict bool/float) — Pydantic, `extra="forbid"`.
+- ADK agent `agents/bouncer_agent.py` (first pipeline stage) with per-`chat_id`
+  in-memory session state (`tele_bot/state.py`).
+- Positive → confirmation + advance to `AWAITING_INTERVIEW`; negative →
+  cheeky rejection + reset; classifier failure → graceful `UNSURE` reply,
+  loud log, never raised to the user.
+- Mocked unit tests for both required behaviours; live Gemini integration
+  tests in `tests/integration/` (excluded by default, opt-in `-m live`).
 
 ## Phase 3 — Interviewer — `todo`
 
