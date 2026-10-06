@@ -1,0 +1,17 @@
+# Pinned dependency manifest (SPECS/TECH.md: dependencies must be
+# reproducible). Direct dependencies only, pinned to exact versions.
+
+# Runtime
+google-adk==2.11.0
+python-telegram-bot==22.8
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# Development (scripts/test, scripts/hooks)
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.16.2
+mypy==2.3.0
+
+# Live integration tests (tests/integration) generate their images with Pillow
+pillow==9.5.0
