@@ -59,7 +59,7 @@ cp .env.example .env
 ### 4. Run the bot
 
 ```bash
-python -m <module>
+python3 -m tele_bot.main  # long polling (no webhooks)
 ```
 
 The bot uses Telegram long polling — no webhook or public URL is required.
@@ -71,9 +71,32 @@ The bot uses Telegram long polling — no webhook or public URL is required.
 | `/start` | Begin a fresh session — clears your state and temporary files |
 | `/restart` | Same as `/start`: reset and start over, without restarting the process |
 
+> **_Implemented so far — the Bouncer only.**_ The bot currently accepts one
+> thing: a photo. It downloads the image, asks Gemini 3.1 Flash Lite whether a
+> human is in the frame, and replies accordingly:
+>
+> - **Human found** → "Right then — one human, duly noted. Let's get started."
+>   and the session advances to the interview phase.
+> - **No human** (animals, landscapes, objects, empty frames) → a cheeky
+>   rejection and the session resets to square one, ready to try again.
+> - **Gemini unavailable/unparseable** → a gentle "couldn't make that out"
+>   reply; the process never crashes on the user's behalf.
+>
+> The Interviewer, Converter, Scripter, and Narrator are planned (see
+> `SPECS/ROADMAP.md`) but not built yet — so `/start` and `/restart` are
+> documented contracts that arrive with the resilience phase.
+
 ## Development
 
 | Script | Runs |
 | --- | --- |
-| `scripts/test` | The test suite |
-| `scripts/hooks` | Lint and type checks |
+| `scripts/test` | Runs the pytest suite (`python3 -m pytest`) |
+| `scripts/hooks` | Runs lint and type checks (`ruff check .`, `ruff format --check .`, `mypy`) |
+
+The unit suite mocks Telegram and Gemini (fast, offline). Live checks against
+the real Gemini API live in `tests/integration/` and are skipped
+automatically when `GEMINI_API_KEY` is absent:
+
+```bash
+pytest tests/integration -m live   # real Gemini; generates its own images
+```
