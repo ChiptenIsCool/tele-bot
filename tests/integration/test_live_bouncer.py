@@ -9,6 +9,7 @@ Run it explicitly with: pytest tests/integration -m live
 """
 
 import io
+import os
 
 import pytest
 from PIL import Image, ImageDraw  # type: ignore[import-untyped]
@@ -19,10 +20,19 @@ from tele_bot.gemini_classifier import GeminiHumanPresenceClassifier
 from tele_bot.settings import SettingsError, load_settings
 from tele_bot.state import PipelinePhase, SessionDriver
 
+# The live check needs ONLY a Gemini key (no Telegram token required). Try the
+# project `.env` first, then fall back to the process environment. An empty
+# fallback is falsy, so the skip below still fires when no key exists.
+GEMINI_API_KEY: str
 try:
     GEMINI_API_KEY = load_settings().gemini_api_key
 except SettingsError:
-    pytest.skip("GEMINI_API_KEY not set (offline suite)", allow_module_level=True)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or ""
+
+if not GEMINI_API_KEY:
+    pytest.skip(
+        "GEMINI_API_KEY not set (live suite); use pytest -m live to run", allow_module_level=True
+    )
 
 pytestmark = pytest.mark.live
 

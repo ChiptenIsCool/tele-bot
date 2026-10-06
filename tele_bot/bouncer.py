@@ -68,7 +68,11 @@ class Bouncer:
 
         if verdict.human_present:
             self._state.advance(photo.chat_id, PipelinePhase.AWAITING_INTERVIEW)
-            logger.info("bouncer.admitted chat_id=%d reason=%s", photo.chat_id, verdict.reason)
+            logger.info(
+                "bouncer.admitted chat_id=%d reason=%s",
+                photo.chat_id,
+                verdict.reason[:120],
+            )
             return BouncerResult(admitted=True, reply=CONFIRMATION_REPLY)
 
         return self._reject(photo, REJECTION_REPLY, cause="no_human")

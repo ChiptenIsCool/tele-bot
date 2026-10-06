@@ -88,7 +88,12 @@ def test_empty_values_are_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         load_settings(env_file=env_file)
 
 
-def test_settings_model_requires_both_fields() -> None:
+def test_settings_model_requires_both_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     """The schema itself — not just the loader — rejects missing secrets."""
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, telegram_bot_token="only-token")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, gemini_api_key="only-key")

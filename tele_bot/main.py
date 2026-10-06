@@ -15,10 +15,11 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from agents.bouncer_agent import BouncerAgent
 from tele_bot.bouncer import Bouncer
+from tele_bot.contracts import PhotoMessage
 from tele_bot.gemini_classifier import GeminiHumanPresenceClassifier
 from tele_bot.settings import Settings, SettingsError, load_settings
 from tele_bot.state import SessionDriver
-from tele_bot.telegram_io import download_photo_bytes
+from tele_bot.telegram_io import download_photo_bytes, sniff_image_mime
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,11 +63,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     runner: InMemoryRunner = context.bot_data["runner"]
 
     data = await download_photo_bytes(context.bot, file_id)
+    # Validate as soon as the bytes leave Telegram — before Gemini or ADK see
+    # them (SPECS/TECH.md: parse at the edge). The agent re-validates too.
+    mime_type = sniff_image_mime(data)
+    PhotoMessage(chat_id=chat_id, file_id=file_id, mime_type=mime_type, data=data)
     await ensure_session(runner, chat_id)
 
     content = types.Content(
         role="user",
-        parts=[types.Part.from_bytes(data=data, mime_type="image/jpeg")],
+        parts=[types.Part.from_bytes(data=data, mime_type=mime_type)],
     )
     reply = NO_REPLY_FALLBACK
     async for event in runner.run_async(

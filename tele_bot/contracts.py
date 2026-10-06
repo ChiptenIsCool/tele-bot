@@ -21,7 +21,7 @@ class PhotoMessage(BaseModel):
     string/int mismatch would silently break session lookups.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     chat_id: int = Field(strict=True)
     file_id: str = Field(min_length=1)
@@ -43,8 +43,16 @@ class HumanPresenceVerdict(BaseModel):
     fails here — loudly — instead of flowing downstream as a raw dict.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     human_present: bool = Field(strict=True)
     reason: str = Field(min_length=1)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def _reject_boolean_confidence(cls, value: object) -> object:
+        """``True`` coerces to ``1.0`` under lax mode — a verdict, not a float."""
+        if isinstance(value, bool):
+            raise ValueError("confidence must be a number, not a boolean")
+        return value

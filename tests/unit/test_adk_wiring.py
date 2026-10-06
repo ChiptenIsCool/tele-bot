@@ -145,6 +145,13 @@ async def test_gate_rejects_content_without_an_image() -> None:
 
     content = types.Content(role="user", parts=[types.Part(text="no image here")])
 
-    with pytest.raises(NoPhotoError):
-        async for _ in runner.run_async(user_id=uid, session_id=uid, new_message=content):
+    # file_id IS present in session state, so the failure must come from the
+    # missing-image branch (_photo_bytes) — not from an absent file_id.
+    with pytest.raises(NoPhotoError, match="image"):
+        async for _ in runner.run_async(
+            user_id=uid,
+            session_id=uid,
+            new_message=content,
+            state_delta={"photo_file_id": "f1"},
+        ):
             pass

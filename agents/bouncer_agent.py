@@ -6,6 +6,7 @@ event carrying the reply. Every value crossing into the gate is re-validated
 through ``PhotoMessage`` here — the agent does not trust the caller.
 """
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 
@@ -40,7 +41,9 @@ class BouncerAgent(BaseAgent):
     @log_async_gen_call(logger)
     async def _run_async_impl(self, ctx: object) -> AsyncGenerator[Event, None]:
         photo = self._photo_from_context(ctx)
-        result = self._bouncer.handle(photo)
+        # The classifier is a sync Gemini call (bounded by its own timeout);
+        # run it off the event loop so one photo never stalls every chat.
+        result = await asyncio.to_thread(self._bouncer.handle, photo)
         yield Event(
             author=self.name,
             content=types.Content(role="model", parts=[types.Part(text=result.reply)]),

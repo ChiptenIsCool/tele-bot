@@ -1,6 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Live tests tag the real Gemini API (D3): excluded from the default run,
+# opt in explicitly with: pytest -m live
+addopts = "-m 'not live'"
 markers = [
     "live: hits the real Gemini API; skipped automatically when GEMINI_API_KEY is absent",
 ]

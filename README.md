@@ -93,10 +93,13 @@ The bot uses Telegram long polling — no webhook or public URL is required.
 | `scripts/test` | Runs the pytest suite (`python3 -m pytest`) |
 | `scripts/hooks` | Runs lint and type checks (`ruff check .`, `ruff format --check .`, `mypy`) |
 
-The unit suite mocks Telegram and Gemini (fast, offline). Live checks against
-the real Gemini API live in `tests/integration/` and are skipped
-automatically when `GEMINI_API_KEY` is absent:
+The unit suite mocks Telegram and Gemini (fast, offline). Checks against the
+real Gemini API live in `tests/integration/` and are **excluded by default** —
+opt in explicitly with the `live` marker:
 
 ```bash
-pytest tests/integration -m live   # real Gemini; generates its own images
+pytest -m live                    # real Gemini; generates its own images
+pytest tests/integration -m live  # same, scoped to the integration tests
 ```
+
+The live tests auto-skip if `GEMINI_API_KEY` is missing (see `SPECS/` D3).
