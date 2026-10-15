@@ -55,25 +55,6 @@ expire after an hour. This does not delete copies held by Telegram or Google.
 
 ## Architecture and specs
 
-The grading rubric (lesson PDF, pages 32–35) maps to this implementation:
-
-| Criterion | Marks | Implemented behaviour |
-| --- | --- | --- |
-| Architectural blueprint | 15 | Required MISSION, TECH and ROADMAP specs, diagram and four ADK agents |
-| Bouncer | 15 | Gemini vision rejects non-human photos and accepts human portraits |
-| Interviewer | 20 | Five sequential questions, per-chat state, personality summary and animal |
-| Converter | 25 | Original photo and dossier together in Gemini native image generation |
-| Scripter and Narrator | 15 | One 60–90 word paragraph plus Gemini TTS voice note in Telegram |
-| Resilience | 10 | Start/restart clears state and media; wrong-stage inputs handled gracefully |
-
-Automated checks cover the complete pipeline twice in one process. Final manual
-acceptance still requires the Telegram walkthrough above, including listening
-to the audio. TAs can clone this repository, install dependencies, supply their
-own keys in `.env`, and run the bot locally.
-
-Scope stays at the assignment: one Python bot process with in-memory sessions.
-Cloud deployment and persistent storage are unnecessary for the graded local run.
-
 Google ADK runs four agents. The Interviewer is the root orchestrator and owns
 an explicit state machine; it delegates vision, portrait generation and writing
 to the Bouncer, Converter and Scripter. Narration is a direct Gemini integration.
