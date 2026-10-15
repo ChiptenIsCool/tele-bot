@@ -1,183 +1,161 @@
-"""Task group 5 gateway tests: the PTB long-polling handler end-to-end.
+"""Telegram lifecycle, delivery and cancellation through real ADK."""
 
-Telegram is mocked (fake bot with download surface), Gemini is stubbed, and
-the whole 'photo update -> download -> validate -> gate -> reply' route runs
-through a real ADK InMemoryRunner — matching validation.md §6.
-"""
-
-from datetime import UTC, datetime
+import asyncio
+import gc
+import io
+from typing import cast
 
 import pytest
-from google.adk.runners import InMemoryRunner
-from telegram import Chat, Message, PhotoSize, Update
+from google.genai import types
+from telegram import Bot
+from test_documentary import FakeServices
 
-from agents.bouncer_agent import BouncerAgent
-from tele_bot.bouncer import CONFIRMATION_REPLY, REJECTION_REPLY, Bouncer
-from tele_bot.contracts import HumanPresenceVerdict
-from tele_bot.main import ensure_session, handle_photo
-from tele_bot.state import PipelinePhase, SessionDriver
-from tele_bot.telegram_io import sniff_image_mime
-
-LANDSCAPE_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01landscape"
-PORTRAIT_JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01portrait"
-
-APP_NAME = "telegram_documentaries"
-
-
-class FakeFile:
-    def __init__(self, payload: bytes) -> None:
-        self._payload = payload
-
-    async def download_as_bytearray(self) -> bytearray:
-        return bytearray(self._payload)
+from tele_bot.gateway import DocumentaryRuntime
+from tele_bot.state import PipelinePhase
 
 
 class FakeBot:
-    """Telegram stand-in exposing the download + reply surface the gateway uses."""
-
-    def __init__(self, payload: bytes) -> None:
-        self._file = FakeFile(payload)
-        self.sent: list[tuple[int, str]] = []
-
-    async def get_file(self, file_id: str) -> FakeFile:
-        return self._file
+    def __init__(self) -> None:
+        self.text: list[tuple[int, str]] = []
+        self.media: list[tuple[int, str, bytes]] = []
 
     async def send_message(self, chat_id: int, text: str) -> None:
-        self.sent.append((chat_id, text))
+        self.text.append((chat_id, text))
+
+    async def send_photo(self, chat_id: int, photo: io.BytesIO, write_timeout: int) -> None:
+        self.media.append((chat_id, "photo", photo.getvalue()))
+
+    async def send_voice(self, chat_id: int, voice: io.BytesIO, write_timeout: int) -> None:
+        self.media.append((chat_id, "voice", voice.getvalue()))
 
 
-class StubClassifier:
-    def __init__(self, verdict: HumanPresenceVerdict) -> None:
-        self._verdict = verdict
-
-    def classify(self, photo: object) -> HumanPresenceVerdict:
-        del photo  # stubbed: the verdict is fixed before the call
-        return self._verdict
-
-
-def _verdict(present: bool) -> HumanPresenceVerdict:
-    return HumanPresenceVerdict(human_present=present, reason="stub says so")
-
-
-def _photo_update(chat_id: int = 1, file_id: str = "f1") -> Update:
-    message = Message(
-        message_id=1,
-        date=datetime.now(UTC),
-        chat=Chat(id=chat_id, type="private"),
-        photo=[PhotoSize(file_id=file_id, file_unique_id="u1", width=640, height=480)],
+def content(text: str = "answer", *, photo: bool = False) -> types.Content:
+    return types.Content(
+        role="user",
+        parts=[
+            types.Part.from_bytes(data=b"portrait", mime_type="image/jpeg")
+            if photo
+            else types.Part(text=text)
+        ],
     )
-    return Update(update_id=1, message=message)
 
 
-class _Context:
-    """Minimal stand-in for the PTB handler context (bot_data + bot)."""
-
-    def __init__(self, bot: FakeBot, runner: InMemoryRunner) -> None:
-        self.bot_data = {"runner": runner}
-        self.bot = bot
-
-
-# --- sniff_image_mime (foundation for gateway validation) -------------------
+async def dispatch(
+    engine: DocumentaryRuntime, bot: FakeBot, turn: types.Content, chat: int = 1
+) -> None:
+    await engine.dispatch(cast(Bot, bot), chat, turn, "photo")
+    await engine.jobs[chat]
 
 
-def test_sniff_image_mime_detects_jpeg() -> None:
-    assert sniff_image_mime(LANDSCAPE_JPEG) == "image/jpeg"
+async def test_gateway_delivers_full_documentary_and_releases_adk_history(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine = DocumentaryRuntime(FakeServices())
+    bot = FakeBot()
+    await dispatch(engine, bot, content(photo=True))
+    for _ in range(5):
+        await dispatch(engine, bot, content())
+    assert [kind for _, kind, _ in bot.media] == ["photo", "voice"]
+    assert all(chat == 1 for chat, _ in bot.text)
+    assert engine.state.get(1).phase is PipelinePhase.COMPLETE
+    session = await engine.runner.session_service.get_session(
+        app_name="telegram_documentaries", user_id="1", session_id="1"
+    )
+    assert session is None
+    await engine.reset(1)
+    await dispatch(engine, bot, content(photo=True))
+    assert engine.state.get(1).question is not None
+    for _ in range(5):
+        await dispatch(engine, bot, content())
+    assert [kind for _, kind, _ in bot.media] == ["photo", "voice", "photo", "voice"]
+    assert engine.state.get(1).phase is PipelinePhase.COMPLETE
+    gc.collect()
+    await asyncio.sleep(0)
+    assert not any("Failed to detach context" in record.message for record in caplog.records)
 
 
-def test_sniff_image_mime_rejects_foreign_bytes() -> None:
-    with pytest.raises(ValueError):
-        sniff_image_mime(b"<html>not an image</html>")
-
-    with pytest.raises(ValueError):
-        sniff_image_mime(b"")
-
-
-# --- the full route (validation.md §6) --------------------------------------
-
-
-async def _run_gateway(
-    payload: bytes, verdict: bool, chat_id: int = 1, file_id: str = "f1"
-) -> tuple[str, SessionDriver]:
-    driver = SessionDriver()
-    classifier = StubClassifier(_verdict(verdict))
-    agent = BouncerAgent(Bouncer(classifier, driver), name="bouncer")
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    bot = FakeBot(payload)
-    await ensure_session(runner, chat_id)
-
-    await handle_photo(_photo_update(chat_id, file_id), _Context(bot, runner))  # type: ignore[arg-type]
-
-    assert bot.sent, "the gateway must reply to every valid photo"
-    return bot.sent[0][1], driver
+async def test_gateway_reset_cancels_active_generation_and_preserves_other_chat() -> None:
+    services = FakeServices()
+    engine = DocumentaryRuntime(services)
+    bot = FakeBot()
+    await dispatch(engine, bot, content(photo=True))
+    await dispatch(engine, bot, content(photo=True), chat=2)
+    for _ in range(4):
+        await dispatch(engine, bot, content())
+    services.block = asyncio.Event()
+    await engine.dispatch(cast(Bot, bot), 1, content())
+    for _ in range(100):
+        if services.images:
+            break
+        await asyncio.sleep(0)
+    assert engine.busy(1)
+    await engine.reset(1)
+    services.block.set()
+    await asyncio.sleep(0)
+    assert engine.state.get(1).phase is PipelinePhase.AWAITING_PHOTO
+    assert engine.state.get(2).question is not None
+    assert not bot.media
+    assert not engine.busy(1)
 
 
-async def test_gateway_negative_rejects_and_resets() -> None:
-    reply, driver = await _run_gateway(LANDSCAPE_JPEG, verdict=False)
-
-    assert reply == REJECTION_REPLY
-    assert driver.get(1).phase is PipelinePhase.AWAITING_PHOTO
-
-
-async def test_gateway_positive_confirms_and_advances() -> None:
-    reply, driver = await _run_gateway(PORTRAIT_JPEG, verdict=True)
-
-    assert reply == CONFIRMATION_REPLY
-    assert driver.get(1).phase is PipelinePhase.AWAITING_INTERVIEW
-
-
-async def test_gateway_sends_the_reply_to_the_right_chat() -> None:
-    driver = SessionDriver()
-    classifier = StubClassifier(_verdict(True))
-    agent = BouncerAgent(Bouncer(classifier, driver), name="bouncer")
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    bot = FakeBot(PORTRAIT_JPEG)
-    await ensure_session(runner, 42)
-
-    await handle_photo(_photo_update(chat_id=42, file_id="f9"), _Context(bot, runner))  # type: ignore[arg-type]
-
-    assert bot.sent == [(42, CONFIRMATION_REPLY)]
+async def test_gateway_error_offers_retry_and_keeps_polling_usable() -> None:
+    services = FakeServices()
+    engine = DocumentaryRuntime(services)
+    bot = FakeBot()
+    await dispatch(engine, bot, content(photo=True))
+    for _ in range(4):
+        await dispatch(engine, bot, content())
+    services.fail_image = True
+    await dispatch(engine, bot, content())
+    assert any("/retry" in text for _, text in bot.text)
+    assert engine.state.get(1).phase is PipelinePhase.CONVERTING
+    services.fail_image = False
+    await dispatch(engine, bot, content("/retry"))
+    assert engine.state.get(1).phase is PipelinePhase.COMPLETE
 
 
-async def test_gateway_ignores_updates_without_a_photo() -> None:
-    """A non-photo update (e.g. sticker, text) must not crash or reply."""
-    driver = SessionDriver()
-    agent = BouncerAgent(Bouncer(StubClassifier(_verdict(True)), driver), name="bouncer")
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    bot = FakeBot(PORTRAIT_JPEG)
-    await ensure_session(runner, 1)
-
-    update = Update(update_id=2, message=None)
-    await handle_photo(update, _Context(bot, runner))  # type: ignore[arg-type]
-
-    assert bot.sent == []
-
-
-async def test_gateway_validation_runs_before_the_gate_sees_data() -> None:
-    """Non-image bytes must be rejected before Gemini/ADK ever runs."""
-    driver = SessionDriver()
-    classifier = StubClassifier(_verdict(True))
-    agent = BouncerAgent(Bouncer(classifier, driver), name="bouncer")
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    bot = FakeBot(b"<html>not an image</html>")
-    await ensure_session(runner, 1)
-
-    # The handler validates the sniffed mime at the edge and refuses to pass
-    # foreign bytes to the gate; an exception here is the loud, early failure.
-    with pytest.raises(ValueError):
-        await handle_photo(_photo_update(1, "evil"), _Context(bot, runner))  # type: ignore[arg-type]
-
-    assert bot.sent == []
-    assert driver.get(1).phase is PipelinePhase.AWAITING_PHOTO
+async def test_gateway_busy_chat_does_not_accept_duplicate_answer() -> None:
+    services = FakeServices()
+    engine = DocumentaryRuntime(services)
+    bot = FakeBot()
+    await dispatch(engine, bot, content(photo=True))
+    for _ in range(4):
+        await dispatch(engine, bot, content())
+    services.block = asyncio.Event()
+    await engine.dispatch(cast(Bot, bot), 1, content())
+    for _ in range(100):
+        if services.images:
+            break
+        await asyncio.sleep(0)
+    await engine.dispatch(cast(Bot, bot), 1, content("extra answer"))
+    assert len(engine.state.get(1).answers) == 5
+    assert services.images == 1
+    await engine.reset(1)
 
 
-async def test_gateway_runs_even_without_explicit_session_pre_creation() -> None:
-    """ensure_session lazily creates the ADK session when missing."""
-    driver = SessionDriver()
-    agent = BouncerAgent(Bouncer(StubClassifier(_verdict(True)), driver), name="bouncer")
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    bot = FakeBot(PORTRAIT_JPEG)
+@pytest.mark.parametrize("text", ["hello", "/retry"])
+async def test_gateway_text_before_photo_prompts_for_portrait(text: str) -> None:
+    engine = DocumentaryRuntime(FakeServices())
+    bot = FakeBot()
+    await dispatch(engine, bot, content(text))
+    assert any("portrait" in reply for _, reply in bot.text)
+    assert engine.state.get(1).phase is PipelinePhase.AWAITING_PHOTO
 
-    await handle_photo(_photo_update(1, "f1"), _Context(bot, runner))  # type: ignore[arg-type]
 
-    assert bot.sent == [(1, CONFIRMATION_REPLY)]
-    assert driver.get(1).phase is PipelinePhase.AWAITING_INTERVIEW
+@pytest.mark.parametrize("stage", ["script", "audio"])
+async def test_later_stage_retry_does_not_regenerate_portrait(stage: str) -> None:
+    services = FakeServices()
+    engine = DocumentaryRuntime(services)
+    bot = FakeBot()
+    await dispatch(engine, bot, content(photo=True))
+    for _ in range(4):
+        await dispatch(engine, bot, content())
+    services.fail_script = stage == "script"
+    services.fail_audio = stage == "audio"
+    await dispatch(engine, bot, content())
+    assert [kind for _, kind, _ in bot.media] == ["photo"]
+    services.fail_script = services.fail_audio = False
+    await dispatch(engine, bot, content("/retry"))
+    assert [kind for _, kind, _ in bot.media] == ["photo", "voice"]
+    assert services.images == 1
+    assert services.questions == 5

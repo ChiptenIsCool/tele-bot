@@ -8,7 +8,9 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-SCHEMA_VERSION = 1
+from tele_bot.contracts import DocumentaryScript, Dossier, InterviewAnswer, PhotoMessage
+
+SCHEMA_VERSION = 2
 
 
 class PipelinePhase(StrEnum):
@@ -16,6 +18,12 @@ class PipelinePhase(StrEnum):
 
     AWAITING_PHOTO = "awaiting_photo"
     AWAITING_INTERVIEW = "awaiting_interview"
+    CHECKING_PHOTO = "checking_photo"
+    PROFILING = "profiling"
+    CONVERTING = "converting"
+    SCRIPTING = "scripting"
+    NARRATING = "narrating"
+    COMPLETE = "complete"
 
 
 class SessionState(BaseModel):
@@ -26,6 +34,11 @@ class SessionState(BaseModel):
     schema_version: int = SCHEMA_VERSION
     chat_id: int
     phase: PipelinePhase = PipelinePhase.AWAITING_PHOTO
+    photo: PhotoMessage | None = None
+    answers: tuple[InterviewAnswer, ...] = ()
+    question: str | None = None
+    dossier: Dossier | None = None
+    script: DocumentaryScript | None = None
 
 
 class SessionDriver:
@@ -61,3 +74,11 @@ class SessionDriver:
         fresh = SessionState(chat_id=chat_id)
         self._states[chat_id] = fresh
         return fresh
+
+    def save(self, state: SessionState) -> None:
+        """Publish a validated immutable snapshot for the orchestrator."""
+        self._states[state.chat_id] = state
+
+    def discard(self, chat_id: int) -> None:
+        """Release abandoned session memory entirely."""
+        self._states.pop(chat_id, None)

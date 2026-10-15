@@ -12,7 +12,7 @@ import io
 import os
 
 import pytest
-from PIL import Image, ImageDraw  # type: ignore[import-untyped]
+from PIL import Image, ImageDraw
 
 from tele_bot.bouncer import Bouncer
 from tele_bot.contracts import PhotoMessage

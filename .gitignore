@@ -15,3 +15,7 @@ venv/
 
 # OS / editor
 .DS_Store
+
+# Local bot process output
+*.log
+.bot.pid

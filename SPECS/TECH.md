@@ -16,6 +16,7 @@ this file.
 | Session state | In memory, keyed by `chat_id` |
 | Secrets | `.env` → `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY` |
 | Validation | Pydantic models at every boundary |
+| Audio encoding | Bundled `imageio-ffmpeg`, OGG/Opus via pipes |
 
 ## Architecture
 
@@ -38,13 +39,37 @@ this file.
 
 ## Contracts at boundaries
 
+```mermaid
+flowchart TD
+    Telegram --> Interviewer[Interviewer: root ADK agent]
+    Interviewer --> Bouncer[ADK Bouncer: human verdict]
+    Bouncer --> Interviewer
+    Interviewer --> Converter[ADK Converter: photo plus dossier]
+    Converter --> Interviewer
+    Interviewer --> Scripter[ADK Scripter: 60–90 word script]
+    Scripter --> Interviewer
+    Interviewer --> TTS[Gemini TTS integration]
+    TTS --> Opus[OGG/Opus encoding]
+    Opus --> Telegram
+```
+
+The root custom ADK agent invokes each specialist through ADK `run_async`.
+Specialists expose one capability each and use the async Google GenAI SDK.
+Interview question generation and profiling are owned by the root agent.
+The application controls stage order and enforces exactly five interview turns;
+the language model cannot skip stages or increase the question count.
+
 - Parse Telegram updates, Gemini responses, and TTS output into **Pydantic
   models at the edge**. Never pass a raw `dict`, an unvalidated payload, or an
   untyped `Any` across a module boundary.
 - Treat all external input — Telegram messages, user photos, Gemini output —
   as **untrusted and arbitrary**. Validate type, size, and shape before use.
-- Model IDs and prompt formats are part of the contract: changing a model or a
-  stage's output shape is a change to `TECH.md` first, then the code.
+- Default model IDs follow the lesson. Optional `TEXT_MODEL`, `IMAGE_MODEL`,
+  `TTS_MODEL` and `TTS_VOICE` settings support explicit API-access changes.
+  Never silently substitute providers or fall back to fake outputs.
+- Typed text output gets one bounded correction request on validation failure.
+  Strip unsupported `additionalProperties` only from the schema sent to Gemini,
+  retaining strict Pydantic validation locally.
 
 ## Logging & error policy
 
@@ -69,6 +94,14 @@ this file.
   process. After a reset the user can immediately begin a fresh run.
 
 ## Testing
+
+- Per-chat tasks are cancellable; reset awaits cancellation before clearing ADK
+  history and typed state. Private chats only. Wrong-stage inputs preserve state.
+- Media is held in memory; FFmpeg uses pipes. ADK history is cleared after each
+  turn. Completed sessions release the dossier and answers. Idle sessions expire
+  after one hour. Retry resumes the failed stage; it never repeats the interview.
+- `scripts/dev.py check` is the portable aggregate check (Windows and POSIX).
+  PowerShell wrappers accompany the POSIX wrappers. Pre-commit adds Gitleaks.
 
 - **Red/Green TDD.** Tests are written **before** the code they cover.
 - Dev scripts live in `scripts/` and are the **ground truth** for the

@@ -1,105 +1,134 @@
-# The Telegram Documentaries
+﻿# The Telegram Documentaries
 
-Upload a portrait photo to a Telegram bot and get back a narrated, comedy
-wildlife-documentary about yourself — a hybrid animal portrait plus a dramatic
-British-documentary voice note.
+Turn a portrait into a funny wildlife documentary: five interview questions,
+a human–animal hybrid portrait, a short script and a narrated Telegram voice note.
 
-## Pipeline
+## Setup on Windows (PowerShell)
 
-1. **The Bouncer** — vision gate. Confirms a human is in the frame; cheekily
-   rejects anything else and resets the session.
-2. **The Interviewer** — the orchestrator. Asks 5–7 questions one at a time
-   and builds a behavioural dossier tied to your `chat_id`.
-3. **The Converter** — merges your photo with the dossier into a hybrid animal
-   portrait, sent straight back into the chat.
-4. **The Scripter** — writes a ~60–90 word dramatic narration.
-5. **The Narrator** — renders the script to speech and delivers it as a
-   Telegram voice note.
+Python 3.11 or 3.12 is recommended. From the project directory:
 
-## Setup
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/ChiptenIsCool/tele-bot.git
-cd tele-bot
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-### 2. Install dependencies
+Fill in `.env` locally with a Telegram BotFather token and a
+[Gemini API key](https://aistudio.google.com/apikey). Never commit this file.
+For this workspace the provided keys have already been saved locally.
 
-```bash
-pip install -r requirements.txt
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -m tele_bot.main
 ```
 
-### 3. Configure your secrets (required)
+The bot runs while this process is running. Stop it with Ctrl+C. For the hidden
+process started during development, stop only this bot with:
 
-This project needs two API keys. They are **not** included in the repository —
-you must supply your own by creating a `.env` file in the project root:
-
-```
-TELEGRAM_BOT_TOKEN = "<your telegram bot token>"
-GEMINI_API_KEY = "<your google gemini api key>"
+```powershell
+Stop-Process -Id (Get-Content .bot.pid)
 ```
 
-Copy `.env.example` to `.env` and fill in your values:
+On macOS/Linux, create and activate `.venv`, install `requirements.txt`, copy
+`.env.example` to `.env`, then run `python -m tele_bot.main`.
 
-```bash
-cp .env.example .env
-```
+Only one process should poll a bot token at a time. Stop the old Codio bot before
+using this copy if Telegram reports a polling conflict. No public URL or webhook
+is required. Sessions are in memory and disappear when the process stops.
 
-| Key | What it is | Where to get it |
-| --- | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | Token for your Telegram bot | Talk to [@BotFather](https://t.me/BotFather) on Telegram → `/newbot` → copy the token it gives you |
-| `GEMINI_API_KEY` | Google Gemini API key | [Google AI Studio](https://aistudio.google.com/apikey) → **Create API key** |
+## Try it in Telegram
 
-> **Never commit your `.env` file.** It is listed in `.gitignore` and must
-> stay out of version control. If a secret is ever pushed, revoke and rotate
-> it immediately.
+1. Open your bot's private chat and send `/start`.
+2. Send a non-human photo to check rejection, then a clear selfie as a photo.
+3. Answer five questions, one at a time.
+4. Receive the animal hybrid portrait, 60–90 word script and OGG/Opus voice note.
+5. Send `/restart` and complete a second run without restarting Python.
 
-### 4. Run the bot
-
-```bash
-python3 -m tele_bot.main  # long polling (no webhooks)
-```
-
-The bot uses Telegram long polling — no webhook or public URL is required.
-
-## Commands
+Your photo and answers are sent to Gemini. Bot-side media stays in memory and
+is released after use; ADK history is cleared after every turn. Idle sessions
+expire after an hour. This does not delete copies held by Telegram or Google.
 
 | Command | Effect |
 | --- | --- |
-| `/start` | Begin a fresh session — clears your state and temporary files |
-| `/restart` | Same as `/start`: reset and start over, without restarting the process |
+| `/start`, `/restart` | Cancel active work, clear this chat's state and begin again |
+| `/retry` | Resume a failed stage without repeating completed stages |
+| `/help` | Show instructions |
 
-> **_Implemented so far — the Bouncer only.**_ The bot currently accepts one
-> thing: a photo. It downloads the image, asks Gemini 3.1 Flash Lite whether a
-> human is in the frame, and replies accordingly:
->
-> - **Human found** → "Right then — one human, duly noted. Let's get started."
->   and the session advances to the interview phase.
-> - **No human** (animals, landscapes, objects, empty frames) → a cheeky
->   rejection and the session resets to square one, ready to try again.
-> - **Gemini unavailable/unparseable** → a gentle "couldn't make that out"
->   reply; the process never crashes on the user's behalf.
->
-> The Interviewer, Converter, Scripter, and Narrator are planned (see
-> `SPECS/ROADMAP.md`) but not built yet — so `/start` and `/restart` are
-> documented contracts that arrive with the resilience phase.
+## Architecture and specs
 
-## Development
+The grading rubric (lesson PDF, pages 32–35) maps to this implementation:
 
-| Script | Runs |
-| --- | --- |
-| `scripts/test` | Runs the pytest suite (`python3 -m pytest`) |
-| `scripts/hooks` | Runs lint and type checks (`ruff check .`, `ruff format --check .`, `mypy`) |
+| Criterion | Marks | Implemented behaviour |
+| --- | --- | --- |
+| Architectural blueprint | 15 | Required MISSION, TECH and ROADMAP specs, diagram and four ADK agents |
+| Bouncer | 15 | Gemini vision rejects non-human photos and accepts human portraits |
+| Interviewer | 20 | Five sequential questions, per-chat state, personality summary and animal |
+| Converter | 25 | Original photo and dossier together in Gemini native image generation |
+| Scripter and Narrator | 15 | One 60–90 word paragraph plus Gemini TTS voice note in Telegram |
+| Resilience | 10 | Start/restart clears state and media; wrong-stage inputs handled gracefully |
 
-The unit suite mocks Telegram and Gemini (fast, offline). Checks against the
-real Gemini API live in `tests/integration/` and are **excluded by default** —
-opt in explicitly with the `live` marker:
+Automated checks cover the complete pipeline twice in one process. Final manual
+acceptance still requires the Telegram walkthrough above, including listening
+to the audio. TAs can clone this repository, install dependencies, supply their
+own keys in `.env`, and run the bot locally.
 
-```bash
-pytest -m live                    # real Gemini; generates its own images
-pytest tests/integration -m live  # same, scoped to the integration tests
+Scope stays at the assignment: one Python bot process with in-memory sessions.
+Cloud deployment and persistent storage are unnecessary for the graded local run.
+
+Google ADK runs four agents. The Interviewer is the root orchestrator and owns
+an explicit state machine; it delegates vision, portrait generation and writing
+to the Bouncer, Converter and Scripter. Narration is a direct Gemini integration.
+
+```mermaid
+flowchart LR
+    T[Telegram long polling] --> I[Interviewer / ADK orchestrator]
+    I --> B[Bouncer: human check]
+    B --> I
+    I --> Q[Five sequential interview turns]
+    Q --> I
+    I --> C[Converter: original photo + dossier]
+    C --> P[Send hybrid portrait]
+    P --> S[Scripter: one paragraph]
+    S --> N[Gemini TTS + OGG/Opus encoding]
+    N --> V[Send voice note]
 ```
 
-The live tests auto-skip if `GEMINI_API_KEY` is missing (see `SPECS/` D3).
+`SPECS/MISSION.md`, `SPECS/TECH.md` and `SPECS/ROADMAP.md` define the project.
+`SPECS/2026-10-15-documentary/` records requirements, implementation plan and
+validation. Feature specs and failing tests precede implementation.
+
+Default models: `gemini-3.1-flash-lite`, `gemini-3.1-flash-image` and
+`gemini-3.1-flash-tts-preview`. Override `TEXT_MODEL`, `IMAGE_MODEL`, `TTS_MODEL`
+and `TTS_VOICE` in `.env` if your course/API access changes. The defaults follow
+the lesson; 3.1 TTS is a legacy preview. Model listing does not guarantee quota.
+API calls may require billing. `/retry` cannot resolve exhausted quota.
+
+FFmpeg is bundled through `imageio-ffmpeg`; a separate system installation is
+unnecessary. PCM audio is encoded through pipes, leaving no temporary media files.
+`requirements.txt` pins direct dependencies; `requirements-lock.txt` records
+all packages resolved in the tested Python 3.12 Windows environment.
+
+## Development checks
+
+```powershell
+.\.venv\Scripts\python.exe scripts/dev.py check
+.\.venv\Scripts\python.exe -m pre_commit install
+.\.venv\Scripts\python.exe -m pre_commit run --all-files
+```
+
+The portable runner invokes `ruff check`, `ruff format --check`, `mypy` and
+`pytest`. POSIX wrappers are `scripts/test` and `scripts/hooks`; PowerShell
+wrappers are `scripts/test.ps1` and `scripts/hooks.ps1` (activate `.venv` first).
+The pre-commit hook runs these checks plus Gitleaks; its initial installation
+needs network access. API tokens and SDK exception URLs are redacted in logs.
+
+Offline tests use stubbed services with a real ADK runner. Live checks are opt-in:
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 scripts/check_live.py
+```
+
+This makes small billable Gemini calls, checks Telegram credentials, and tests
+question generation, profiling, scripting, vision, image generation and audio.
+It sends no Telegram messages and writes no generated media. Its sample portrait
+is a drawing, so a successful smoke check does not replace a real selfie test.
+The original Bouncer-only integration tests can be run with `pytest -m live`.

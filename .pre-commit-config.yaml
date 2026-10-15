@@ -1,0 +1,13 @@
+repos:
+  - repo: local
+    hooks:
+      - id: project-checks
+        name: ruff, format, mypy and pytest
+        entry: python scripts/dev.py check
+        language: system
+        pass_filenames: false
+        always_run: true
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

@@ -23,5 +23,5 @@ python_version = "3.11"
 # google-adk does not ship type information; its boundary is kept typed by our
 # own contracts (HumanPresenceVerdict) which are validated explicitly.
 [[tool.mypy.overrides]]
-module = ["google.adk.*"]
+module = ["google.adk.*", "imageio_ffmpeg", "PIL.*"]
 ignore_missing_imports = true

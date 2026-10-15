@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Ground truth for running the test suite (see README.md and SPECS/TECH.md).
 # Usage: scripts/test [extra pytest args...]
+# Runs pytest using the portable development runner.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-exec python3 -m pytest "$@"
+exec python3 scripts/dev.py test "$@"

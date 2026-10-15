@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Ground truth for lint + type checks (see README.md and SPECS/TECH.md).
 # Usage: scripts/hooks
+# Runs ruff check, ruff format --check and mypy via the portable runner.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python3 -m ruff check .
-python3 -m ruff format --check .
-exec python3 -m mypy
+exec python3 scripts/dev.py hooks

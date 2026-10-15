@@ -36,6 +36,10 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str
     gemini_api_key: str
+    text_model: str = "gemini-3.1-flash-lite"
+    image_model: str = "gemini-3.1-flash-image"
+    tts_model: str = "gemini-3.1-flash-tts-preview"
+    tts_voice: str = "Charon"
 
     def __init__(self, _env_file: Path | None = DEFAULT_ENV_FILE, **data: Any) -> None:
         """Typed ``_env_file`` so strict type checking accepts it.

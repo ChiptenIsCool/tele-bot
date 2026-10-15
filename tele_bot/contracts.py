@@ -56,3 +56,47 @@ class HumanPresenceVerdict(BaseModel):
         if isinstance(value, bool):
             raise ValueError("confidence must be a number, not a boolean")
         return value
+
+
+class InterviewTurn(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    question: str = Field(min_length=5, max_length=500)
+
+    @field_validator("question")
+    @classmethod
+    def _one_question(cls, value: str) -> str:
+        if value.count("?") != 1 or "\n" in value:
+            raise ValueError("ask exactly one question on one line")
+        return value
+
+
+class InterviewAnswer(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    question: str = Field(min_length=1, max_length=500)
+    answer: str = Field(min_length=1, max_length=2000)
+
+
+class Dossier(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    summary: str = Field(min_length=10, max_length=3000)
+    animal: str = Field(min_length=2, max_length=100)
+    rationale: str = Field(min_length=5, max_length=500)
+
+
+class DocumentaryScript(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def _one_paragraph(cls, value: str) -> str:
+        value = value.strip()
+        if "\n" in value or not 60 <= len(value.split()) <= 90:
+            raise ValueError("script must be one paragraph of 60–90 words")
+        return value
+
+
+class Media(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    data: bytes = Field(min_length=1, max_length=20 * 1024 * 1024)
+    mime_type: str = Field(pattern=r"^(image/(png|jpeg|webp)|audio/ogg)$")
